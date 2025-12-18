@@ -1,0 +1,20 @@
+{
+  "features": {
+    "webSupport": true,
+    "mobileOptimized": true,
+    "autoSyncGit": true
+  },
+  "editor": {
+    "fontSize": "16px",
+    "minimap": false,
+    "wordWrap": true,
+    "tabSize": 2
+  },
+  "git": {
+    "autoCommit": true,
+    "autoPush": false,
+    "commitOnSave": true
+  }
+}
+
+
