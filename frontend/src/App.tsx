@@ -1,100 +1,124 @@
-import React, { useEffect, useState } from "react";
-import MessageList from "./components/MessageList";
-import Composer from "./components/Composer";
-import type { Message, NewMessageInput } from "./types";
+import React, { useState } from "react";
 import styles from "./App.module.css";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+interface ChatMessage {
+  id: string;
+  text: string;
+  sender: "user" | "server";
+  timestamp: Date;
+}
 
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [isSending, setIsSending] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/messages`);
-        if (!res.ok) return;
-        const data = (await res.json()) as Message[];
-        setMessages(data);
-      } catch {
-        // Backend может быть ещё не запущен – тихо игнорируем ошибку.
-      }
+  const handleSend = async () => {
+    if (!inputValue.trim() || isSending) return;
+
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      text: inputValue,
+      sender: "user",
+      timestamp: new Date()
     };
-    void load();
-  }, []);
 
-  const handleSend = async (input: NewMessageInput) => {
+    // Optimistically add user message to list
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue("");
+    setIsSending(true);
+
     try {
-      const res = await fetch(`${API_URL}/api/messages`, {
+      // POST to backend
+      const response = await fetch("http://localhost:3000/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input)
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message: inputValue })
       });
 
-      if (res.ok) {
-        const data = (await res.json()) as { message: Message };
-        setMessages((prev) => [data.message, ...prev]);
-        return;
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Add server reply to list
+        const serverMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          text: data.reply,
+          sender: "server",
+          timestamp: new Date(data.timestamp)
+        };
+
+        setMessages((prev) => [...prev, serverMessage]);
       }
-    } catch {
-      // Fallback: если бэкенд недоступен, сохраняем сообщение только на фронте.
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      
+      // Add error message
+      const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        text: "Failed to connect to server",
+        sender: "server",
+        timestamp: new Date()
+      };
+
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsSending(false);
     }
+  };
 
-    const localMessage: Message = {
-      id: crypto.randomUUID(),
-      channel: input.channel,
-      from: input.from,
-      to: input.to,
-      subject: input.subject,
-      body: input.body,
-      createdAt: new Date().toISOString(),
-      status: "sent"
-    };
-
-    setMessages((prev) => [localMessage, ...prev]);
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   return (
     <div className={styles.app}>
-      <header className={styles.header}>
-        <div className={styles.title}>📬 Presidium v0.0.0.1 — Unified Inbox</div>
-        <span className={styles.badge}>Demo • Email + SMS + P2P</span>
-      </header>
+      <div className={styles.messagesContainer}>
+        {messages.length === 0 ? (
+          <div className={styles.emptyState}>
+            Start a conversation with Presidium Core
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`${styles.message} ${
+                msg.sender === "user" ? styles.userMessage : styles.serverMessage
+              }`}
+            >
+              <div className={styles.messageText}>{msg.text}</div>
+              <div className={styles.messageTime}>
+                {msg.timestamp.toLocaleTimeString()}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
-      <main className={styles.layout}>
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div className={styles.panelTitle}>Unified Inbox</div>
-            <div className={styles.panelMeta}>{messages.length} сообщений</div>
-          </div>
-          <div className={styles.panelBody}>
-            <MessageList messages={messages} />
-          </div>
-        </section>
-
-        <section className={`${styles.panel} ${styles.panelRight}`}>
-          <div className={styles.panelHeader}>
-            <div className={styles.panelTitle}>Composer</div>
-            <div className={styles.panelMeta}>Отправка в демо-инбокс</div>
-          </div>
-          <div className={styles.panelBody}>
-            <Composer onSend={handleSend} />
-          </div>
-        </section>
-      </main>
-
-      <footer className={styles.footer}>
-        <span>Backend: {API_URL}</span>
-        <span>
-          Built with <a className={styles.link} href="https://vitejs.dev" target="_blank" rel="noreferrer">
-            Vite + React 18 + TypeScript
-          </a>
-        </span>
-      </footer>
+      <div className={styles.inputContainer}>
+        <input
+          type="text"
+          className={styles.input}
+          placeholder="Type a message..."
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyPress={handleKeyPress}
+          disabled={isSending}
+        />
+        <button
+          className={styles.sendButton}
+          onClick={handleSend}
+          disabled={!inputValue.trim() || isSending}
+        >
+          {isSending ? "Sending..." : "Send"}
+        </button>
+      </div>
     </div>
   );
 };
 
 export default App;
-
-
