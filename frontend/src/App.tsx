@@ -1,17 +1,37 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import styles from "./App.module.css";
 
 interface ChatMessage {
   id: string;
   text: string;
   sender: "user" | "server";
-  timestamp: Date;
+  timestamp: string;
 }
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load chat history when app mounts
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const response = await fetch("http://localhost:3000/api/history");
+        if (response.ok) {
+          const history = await response.json();
+          setMessages(history);
+        }
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadHistory();
+  }, []);
 
   const handleSend = async () => {
     if (!inputValue.trim() || isSending) return;
@@ -20,7 +40,7 @@ const App: React.FC = () => {
       id: crypto.randomUUID(),
       text: inputValue,
       sender: "user",
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
     // Optimistically add user message to list
@@ -46,7 +66,7 @@ const App: React.FC = () => {
           id: crypto.randomUUID(),
           text: data.reply,
           sender: "server",
-          timestamp: new Date(data.timestamp)
+          timestamp: data.timestamp
         };
 
         setMessages((prev) => [...prev, serverMessage]);
@@ -59,7 +79,7 @@ const App: React.FC = () => {
         id: crypto.randomUUID(),
         text: "Failed to connect to server",
         sender: "server",
-        timestamp: new Date()
+        timestamp: new Date().toISOString()
       };
 
       setMessages((prev) => [...prev, errorMessage]);
@@ -74,6 +94,16 @@ const App: React.FC = () => {
       handleSend();
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className={styles.app}>
+        <div className={styles.loadingState}>
+          Loading chat history...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.app}>
@@ -92,7 +122,7 @@ const App: React.FC = () => {
             >
               <div className={styles.messageText}>{msg.text}</div>
               <div className={styles.messageTime}>
-                {msg.timestamp.toLocaleTimeString()}
+                {new Date(msg.timestamp).toLocaleTimeString()}
               </div>
             </div>
           ))
