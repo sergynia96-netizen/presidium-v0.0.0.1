@@ -1,24 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./App.module.css";
+import MessageList from "./components/MessageList";
+import Composer from "./components/Composer";
+import type { Message, NewMessageInput } from "./types";
 
-interface ChatMessage {
-  id: string;
-  text: string;
-  sender: "user" | "server";
-  timestamp: Date;
-}
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [systemPrompt, setSystemPrompt] = useState(
     "Ты помощник Presidium. Отвечай коротко и по делу."
   );
-  const [isPromptVisible, setIsPromptVisible] = useState(false);
+  const [isPromptVisible, setIsPromptVisible] = useState(true);
   const [callStatus, setCallStatus] = useState<"idle" | "connecting" | "active">(
     "idle"
   );
@@ -32,6 +25,11 @@ const App: React.FC = () => {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const pcLocalRef = useRef<RTCPeerConnection | null>(null);
   const pcRemoteRef = useRef<RTCPeerConnection | null>(null);
+
+  const messageCountLabel = useMemo(() => {
+    if (messages.length === 0) return "Нет сообщений";
+    return `${messages.length} сообщений`;
+  }, [messages.length]);
 
   const resetCallState = () => {
     setCallStatus("idle");
@@ -150,20 +148,24 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || isSending) return;
+  const addMessage = (message: Message) => {
+    setMessages((prev) => [message, ...prev]);
+  };
 
-    const userMessage: ChatMessage = {
+  const handleSend = async (input: NewMessageInput) => {
+    const now = new Date().toISOString();
+    const userMessage: Message = {
       id: crypto.randomUUID(),
-      text: inputValue,
-      sender: "user",
-      timestamp: new Date()
+      channel: input.channel,
+      from: input.from,
+      to: input.to,
+      subject: input.subject,
+      body: input.body,
+      createdAt: now,
+      status: "sent"
     };
 
-    // Optimistically add user message to list
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
-    setIsSending(true);
+    addMessage(userMessage);
 
     try {
       // POST to backend
@@ -172,187 +174,176 @@ const App: React.FC = () => {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: inputValue, systemPrompt })
+        body: JSON.stringify({ message: input.body, systemPrompt })
       });
 
       if (response.ok) {
         const data = await response.json();
         
         // Add server reply to list
-        const serverMessage: ChatMessage = {
+        const serverMessage: Message = {
           id: crypto.randomUUID(),
-          text: data.reply,
-          sender: "server",
-          timestamp: new Date(data.timestamp)
+          channel: input.channel,
+          from: "presidium.local",
+          to: input.from,
+          subject: "Local LLM",
+          body: data.reply,
+          createdAt: new Date(data.timestamp).toISOString(),
+          status: "received"
         };
 
-        setMessages((prev) => [...prev, serverMessage]);
+        addMessage(serverMessage);
       }
     } catch (error) {
       console.error("Failed to send message:", error);
       
       // Add error message
-      const errorMessage: ChatMessage = {
+      const errorMessage: Message = {
         id: crypto.randomUUID(),
-        text: "Failed to connect to server",
-        sender: "server",
-        timestamp: new Date()
+        channel: input.channel,
+        from: "presidium.local",
+        to: input.from,
+        subject: "Ошибка доставки",
+        body: "Не удалось подключиться к серверу.",
+        createdAt: new Date().toISOString(),
+        status: "failed"
       };
 
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+      addMessage(errorMessage);
     }
   };
 
   return (
     <div className={styles.app}>
-      <section className={styles.callPanel}>
-        <div className={styles.callHeader}>
-          <div>
-            <h2 className={styles.callTitle}>Аудио и видео звонки</h2>
-            <p className={styles.callSubtitle}>
-              Локальный WebRTC loopback. Для реальных звонков потребуется сигналинг сервер.
-            </p>
-          </div>
-          <div className={styles.callStatus}>
-            {callStatus === "idle" && "Готов к звонку"}
-            {callStatus === "connecting" && "Подключение..."}
-            {callStatus === "active" && `Звонок активен (${callMode})`}
-          </div>
-        </div>
-
-        {callError ? <div className={styles.callError}>{callError}</div> : null}
-
-        <div className={styles.callControls}>
-          <button
-            className={styles.callButton}
-            onClick={() => startCall("audio")}
-            disabled={callStatus !== "idle"}
-          >
-            Аудио звонок
-          </button>
-          <button
-            className={styles.callButton}
-            onClick={() => startCall("video")}
-            disabled={callStatus !== "idle"}
-          >
-            Видео звонок
-          </button>
-          <button
-            className={styles.callButtonSecondary}
-            onClick={toggleMic}
-            disabled={callStatus !== "active"}
-          >
-            {isMicMuted ? "Включить микрофон" : "Выключить микрофон"}
-          </button>
-          <button
-            className={styles.callButtonSecondary}
-            onClick={toggleCamera}
-            disabled={callStatus !== "active" || callMode !== "video"}
-          >
-            {isCameraOff ? "Включить камеру" : "Выключить камеру"}
-          </button>
-          <button
-            className={styles.callButtonDanger}
-            onClick={stopCall}
-            disabled={callStatus === "idle"}
-          >
-            Завершить звонок
-          </button>
-        </div>
-
-        <div className={styles.callMediaGrid}>
-          <div className={styles.callMediaCard}>
-            <span>Ваш поток</span>
-            <video
-              ref={localVideoRef}
-              className={styles.callVideo}
-              autoPlay
-              muted
-              playsInline
-            />
-          </div>
-          <div className={styles.callMediaCard}>
-            <span>Удаленный поток</span>
-            <video ref={remoteVideoRef} className={styles.callVideo} autoPlay playsInline />
-          </div>
-        </div>
-      </section>
-      <section className={styles.chatHeader}>
+      <header className={styles.header}>
         <div>
-          <h2 className={styles.chatTitle}>Локальный чат</h2>
-          <p className={styles.chatSubtitle}>
-            Backend: {API_BASE_URL}. Подключайте локальный LLM через переменные окружения.
+          <div className={styles.kicker}>Presidium Core</div>
+          <h1 className={styles.title}>Unified Inbox</h1>
+          <p className={styles.subtitle}>
+            Локальный чат + аудио/видео звонки. Backend: {API_BASE_URL}
           </p>
         </div>
-        <button
-          className={styles.promptToggle}
-          onClick={() => setIsPromptVisible((prev) => !prev)}
-        >
-          {isPromptVisible ? "Скрыть инструкцию" : "Показать инструкцию"}
-        </button>
-      </section>
-      {isPromptVisible ? (
-        <div className={styles.promptPanel}>
-          <label className={styles.promptLabel} htmlFor="systemPrompt">
-            System prompt для локального LLM
-          </label>
-          <textarea
-            id="systemPrompt"
-            className={styles.promptInput}
-            value={systemPrompt}
-            onChange={(event) => setSystemPrompt(event.target.value)}
-            rows={3}
-          />
+        <div className={styles.statusBadge}>
+          {callStatus === "active" ? "Звонок активен" : "Система готова"}
         </div>
-      ) : null}
-      <div className={styles.messagesContainer}>
-        {messages.length === 0 ? (
-          <div className={styles.emptyState}>
-            Start a conversation with Presidium Core
+      </header>
+
+      <div className={styles.layout}>
+        <section className={styles.inboxPanel}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h2>Единый инбокс</h2>
+              <p>Сообщения из чата, почты и SMS</p>
+            </div>
+            <span className={styles.panelMeta}>{messageCountLabel}</span>
           </div>
-        ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`${styles.message} ${
-                msg.sender === "user" ? styles.userMessage : styles.serverMessage
-              }`}
-            >
-              <div className={styles.messageText}>{msg.text}</div>
-              <div className={styles.messageTime}>
-                {msg.timestamp.toLocaleTimeString()}
+          <MessageList messages={messages} />
+        </section>
+
+        <aside className={styles.sidePanel}>
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h3>Звонки</h3>
+                <p>Локальный WebRTC loopback без сигналинга</p>
+              </div>
+              <span className={styles.callStatusBadge}>
+                {callStatus === "idle" && "Готов"}
+                {callStatus === "connecting" && "Подключение"}
+                {callStatus === "active" && `В сети (${callMode})`}
+              </span>
+            </div>
+
+            {callError ? <div className={styles.callError}>{callError}</div> : null}
+
+            <div className={styles.callControls}>
+              <button
+                className={styles.primaryButton}
+                onClick={() => startCall("audio")}
+                disabled={callStatus !== "idle"}
+              >
+                Аудио звонок
+              </button>
+              <button
+                className={styles.primaryButton}
+                onClick={() => startCall("video")}
+                disabled={callStatus !== "idle"}
+              >
+                Видео звонок
+              </button>
+              <button
+                className={styles.secondaryButton}
+                onClick={toggleMic}
+                disabled={callStatus !== "active"}
+              >
+                {isMicMuted ? "Включить микрофон" : "Выключить микрофон"}
+              </button>
+              <button
+                className={styles.secondaryButton}
+                onClick={toggleCamera}
+                disabled={callStatus !== "active" || callMode !== "video"}
+              >
+                {isCameraOff ? "Включить камеру" : "Выключить камеру"}
+              </button>
+              <button
+                className={styles.dangerButton}
+                onClick={stopCall}
+                disabled={callStatus === "idle"}
+              >
+                Завершить звонок
+              </button>
+            </div>
+
+            <div className={styles.callMediaGrid}>
+              <div className={styles.callMediaCard}>
+                <span>Ваш поток</span>
+                <video
+                  ref={localVideoRef}
+                  className={styles.callVideo}
+                  autoPlay
+                  muted
+                  playsInline
+                />
+              </div>
+              <div className={styles.callMediaCard}>
+                <span>Удаленный поток</span>
+                <video ref={remoteVideoRef} className={styles.callVideo} autoPlay playsInline />
               </div>
             </div>
-          ))
-        )}
-      </div>
+          </div>
 
-      <div className={styles.inputContainer}>
-        <input
-          type="text"
-          className={styles.input}
-          placeholder="Type a message..."
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          disabled={isSending}
-        />
-        <button
-          className={styles.sendButton}
-          onClick={handleSend}
-          disabled={!inputValue.trim() || isSending}
-        >
-          {isSending ? "Sending..." : "Send"}
-        </button>
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h3>Local LLM</h3>
+                <p>Настройте prompt и отправьте сообщение</p>
+              </div>
+              <button
+                className={styles.secondaryButton}
+                onClick={() => setIsPromptVisible((prev) => !prev)}
+              >
+                {isPromptVisible ? "Скрыть prompt" : "Показать prompt"}
+              </button>
+            </div>
+
+            {isPromptVisible ? (
+              <div className={styles.promptPanel}>
+                <label className={styles.promptLabel} htmlFor="systemPrompt">
+                  System prompt для локального LLM
+                </label>
+                <textarea
+                  id="systemPrompt"
+                  className={styles.promptInput}
+                  value={systemPrompt}
+                  onChange={(event) => setSystemPrompt(event.target.value)}
+                  rows={3}
+                />
+              </div>
+            ) : null}
+
+            <Composer onSend={handleSend} />
+          </div>
+        </aside>
       </div>
     </div>
   );
