@@ -80,10 +80,12 @@ touch frontend/index.html
 touch frontend/package.json
 touch frontend/tsconfig.json
 touch frontend/vite.config.ts
+touch frontend/Dockerfile.dev
 
 touch .github/workflows/deploy.yml
 touch docker-compose.yml
 touch Dockerfile.backend
+touch database/init.sql
 touch .env.example
 touch package.json
 ```
@@ -102,7 +104,8 @@ New-Item -ItemType File -Force -Path frontend/src/App.tsx, frontend/src/App.modu
 New-Item -ItemType File -Force -Path frontend/src/components/MessageList.tsx, frontend/src/components/MessageList.module.css
 New-Item -ItemType File -Force -Path frontend/src/components/Composer.tsx, frontend/src/components/Composer.module.css
 New-Item -ItemType File -Force -Path frontend/index.html, frontend/package.json, frontend/tsconfig.json, frontend/vite.config.ts
-New-Item -ItemType File -Force -Path .github/workflows/deploy.yml, docker-compose.yml, Dockerfile.backend, .env.example, package.json
+New-Item -ItemType File -Force -Path frontend/Dockerfile.dev
+New-Item -ItemType File -Force -Path .github/workflows/deploy.yml, docker-compose.yml, Dockerfile.backend, database/init.sql, .env.example, package.json
 ```
 
 ---
@@ -267,6 +270,7 @@ presidium-v0.0.0.1/
 │   │       ├── Composer.tsx
 │   │       └── Composer.module.css
 │   ├── index.html
+│   ├── Dockerfile.dev
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── vite.config.ts
@@ -277,6 +281,8 @@ presidium-v0.0.0.1/
 │
 ├── docker-compose.yml
 ├── Dockerfile.backend
+├── database/
+│   └── init.sql
 ├── .gitignore                 # Already created
 ├── .env.example
 ├── LICENSE                    # MIT - Already created
@@ -289,9 +295,9 @@ presidium-v0.0.0.1/
 ## Next Steps
 
 1. ✅ Repository created on GitHub
-2. ⏳ Initialize local repository
-3. ⏳ Create project structure
-4. ⏳ Add file contents
+2. ✅ Initialize local repository
+3. ✅ Create project structure
+4. ✅ Add file contents
 5. ⏳ Configure environment variables
 6. ⏳ Test locally
 7. ⏳ Deploy to staging
@@ -337,4 +343,4 @@ docker system prune -a
 
 **Created**: December 19, 2025
 **Version**: 0.0.0.1
-**Status**: Initial Setup
+**Status**: Core scaffold complete (ready for configuration, testing, and staging)
