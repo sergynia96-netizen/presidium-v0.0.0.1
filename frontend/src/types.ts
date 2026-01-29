@@ -13,6 +13,7 @@ export interface Attachment {
   id: string;
   type: AttachmentType;
   url?: string;
+  storageKey?: string;
   name?: string;
   size?: number;
   duration?: number;
@@ -20,6 +21,8 @@ export interface Attachment {
   longitude?: number;
   label?: string;
   expiresAt?: string;
+  isEncrypted?: boolean;
+  isCompressed?: boolean;
 }
 
 export interface Message {
@@ -42,4 +45,3 @@ export interface NewMessageInput {
   body: string;
   attachments?: Attachment[];
 }
-

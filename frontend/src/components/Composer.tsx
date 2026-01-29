@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import type { Attachment, Channel, NewMessageInput } from "../types";
 import styles from "./Composer.module.css";
+import { deleteMedia, saveMedia } from "../services/localMediaStore";
 
 interface ComposerProps {
   onSend: (input: NewMessageInput) => Promise<void> | void;
@@ -51,15 +52,23 @@ export const Composer: React.FC<ComposerProps> = ({ onSend }) => {
     }
   };
 
-  const handleFiles = (files: FileList | null, type: Attachment["type"]) => {
+  const handleFiles = async (files: FileList | null, type: Attachment["type"]) => {
     if (!files) return;
-    const next = Array.from(files).map((file) => ({
-      id: crypto.randomUUID(),
-      type,
-      url: URL.createObjectURL(file),
-      name: file.name,
-      size: file.size
-    }));
+    const next: Attachment[] = [];
+
+    for (const file of Array.from(files)) {
+      const stored = await saveMedia(file);
+      next.push({
+        id: crypto.randomUUID(),
+        type,
+        storageKey: stored.id,
+        name: file.name,
+        size: file.size,
+        isEncrypted: true,
+        isCompressed: true
+      });
+    }
+
     setAttachments((prev) => [...prev, ...next]);
   };
 
@@ -73,7 +82,9 @@ export const Composer: React.FC<ComposerProps> = ({ onSend }) => {
           type: "location",
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
-          label: "Моя геопозиция"
+          label: "Моя геопозиция",
+          isEncrypted: false,
+          isCompressed: false
         }
       ]);
     });
@@ -90,16 +101,20 @@ export const Composer: React.FC<ComposerProps> = ({ onSend }) => {
     };
     recorder.onstop = () => {
       const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-      const url = URL.createObjectURL(blob);
-      setAttachments((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: "voice",
-          url,
-          duration: Math.round(blob.size / 1000)
-        }
-      ]);
+      void (async () => {
+        const stored = await saveMedia(blob);
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: "voice",
+            storageKey: stored.id,
+            duration: Math.round(blob.size / 1000),
+            isEncrypted: true,
+            isCompressed: true
+          }
+        ]);
+      })();
       stream.getTracks().forEach((track) => track.stop());
     };
     recorder.start();
@@ -122,17 +137,21 @@ export const Composer: React.FC<ComposerProps> = ({ onSend }) => {
     };
     recorder.onstop = () => {
       const blob = new Blob(videoChunksRef.current, { type: "video/webm" });
-      const url = URL.createObjectURL(blob);
       const expiresAt = isCircle ? new Date(Date.now() + 60_000).toISOString() : undefined;
-      setAttachments((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: isCircle ? "video-circle" : "video",
-          url,
-          expiresAt
-        }
-      ]);
+      void (async () => {
+        const stored = await saveMedia(blob);
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: isCircle ? "video-circle" : "video",
+            storageKey: stored.id,
+            expiresAt,
+            isEncrypted: true,
+            isCompressed: true
+          }
+        ]);
+      })();
       stream.getTracks().forEach((track) => track.stop());
     };
     recorder.start();
@@ -227,7 +246,12 @@ export const Composer: React.FC<ComposerProps> = ({ onSend }) => {
               <button
                 type="button"
                 onClick={() =>
-                  setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))
+                  setAttachments((prev) => {
+                    if (attachment.storageKey) {
+                      void deleteMedia(attachment.storageKey);
+                    }
+                    return prev.filter((item) => item.id !== attachment.id);
+                  })
                 }
               >
                 ×
@@ -289,4 +313,3 @@ export const Composer: React.FC<ComposerProps> = ({ onSend }) => {
 };
 
 export default Composer;
-

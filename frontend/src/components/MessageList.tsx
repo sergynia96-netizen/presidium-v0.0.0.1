@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import type { Attachment, Message } from "../types";
 import styles from "./MessageList.module.css";
+import { loadMedia } from "../services/localMediaStore";
 
 interface MessageListProps {
   messages: Message[];
@@ -19,6 +20,16 @@ const isAttachmentExpired = (attachment: Attachment) => {
 };
 
 export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+  const [loadedUrls, setLoadedUrls] = useState<Record<string, string>>({});
+
+  const handleLoad = async (attachment: Attachment) => {
+    if (!attachment.storageKey) return;
+    const blob = await loadMedia(attachment.storageKey);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    setLoadedUrls((prev) => ({ ...prev, [attachment.id]: url }));
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.scroll}>
@@ -45,11 +56,13 @@ export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
                   {m.attachments
                     .filter((att) => !isAttachmentExpired(att))
                     .map((att) => {
-                      if (att.type === "image" && att.url) {
+                      const url = att.url ?? loadedUrls[att.id];
+
+                      if (att.type === "image" && url) {
                         return (
                           <img
                             key={att.id}
-                            src={att.url}
+                            src={url}
                             alt={att.name ?? "image"}
                             className={styles.attachmentImage}
                           />
@@ -60,12 +73,12 @@ export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
                         (att.type === "video" ||
                           att.type === "video-circle" ||
                           att.type === "vanishing-video") &&
-                        att.url
+                        url
                       ) {
                         return (
                           <video
                             key={att.id}
-                            src={att.url}
+                            src={url}
                             className={
                               att.type === "video-circle"
                                 ? styles.attachmentVideoCircle
@@ -76,19 +89,19 @@ export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
                         );
                       }
 
-                      if (att.type === "voice" && att.url) {
+                      if (att.type === "voice" && url) {
                         return (
                           <audio key={att.id} className={styles.attachmentAudio} controls>
-                            <source src={att.url} />
+                            <source src={url} />
                           </audio>
                         );
                       }
 
-                      if (att.type === "document" && att.url) {
+                      if (att.type === "document" && url) {
                         return (
                           <a
                             key={att.id}
-                            href={att.url}
+                            href={url}
                             className={styles.attachmentDoc}
                             download={att.name}
                           >
@@ -123,6 +136,18 @@ export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
                         );
                       }
 
+                      if (att.storageKey) {
+                        return (
+                          <button
+                            key={att.id}
+                            className={styles.attachmentLoad}
+                            onClick={() => handleLoad(att)}
+                          >
+                            Загрузить {att.type}
+                          </button>
+                        );
+                      }
+
                       return null;
                     })}
                 </div>
@@ -136,4 +161,3 @@ export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
 };
 
 export default MessageList;
-

@@ -3,6 +3,7 @@ import styles from "./App.module.css";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
 import type { Attachment, Message, NewMessageInput } from "./types";
+import { deleteMedia } from "./services/localMediaStore";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 const App: React.FC = () => {
@@ -167,7 +168,24 @@ const App: React.FC = () => {
         prev
           .map((message) => {
             if (!message.attachments) return message;
-            const active = message.attachments.filter((att) => !isAttachmentExpired(att));
+            const [active, expired] = message.attachments.reduce<
+              [Attachment[], Attachment[]]
+            >(
+              (acc, att) => {
+                if (isAttachmentExpired(att)) {
+                  acc[1].push(att);
+                } else {
+                  acc[0].push(att);
+                }
+                return acc;
+              },
+              [[], []]
+            );
+            expired.forEach((att) => {
+              if (att.storageKey) {
+                void deleteMedia(att.storageKey);
+              }
+            });
             return { ...message, attachments: active };
           })
           .filter((message) => message.body || (message.attachments?.length ?? 0) > 0)
