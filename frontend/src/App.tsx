@@ -5,13 +5,14 @@ import Composer from "./components/Composer";
 import type { Message, NewMessageInput } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
-
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [systemPrompt, setSystemPrompt] = useState(
     "Ты помощник Presidium. Отвечай коротко и по делу."
   );
   const [isPromptVisible, setIsPromptVisible] = useState(true);
+  const [roomId, setRoomId] = useState("presidium-demo");
+  const [isRoomConnected, setIsRoomConnected] = useState(false);
   const [callStatus, setCallStatus] = useState<"idle" | "connecting" | "active">(
     "idle"
   );
@@ -24,7 +25,8 @@ const App: React.FC = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const pcLocalRef = useRef<RTCPeerConnection | null>(null);
-  const pcRemoteRef = useRef<RTCPeerConnection | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const lastSignalIdRef = useRef(0);
 
   const messageCountLabel = useMemo(() => {
     if (messages.length === 0) return "Нет сообщений";
@@ -41,9 +43,7 @@ const App: React.FC = () => {
 
   const stopCall = () => {
     pcLocalRef.current?.close();
-    pcRemoteRef.current?.close();
     pcLocalRef.current = null;
-    pcRemoteRef.current = null;
 
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     remoteStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -60,62 +60,70 @@ const App: React.FC = () => {
     resetCallState();
   };
 
+  const sendSignal = async (payload: Record<string, unknown>) => {
+    if (!isRoomConnected) return;
+    await fetch(`${API_BASE_URL}/api/signaling/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ room: roomId, payload })
+    });
+  };
+
+  const ensurePeerConnection = async (mode: "audio" | "video") => {
+    if (pcLocalRef.current) return pcLocalRef.current;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: mode === "video"
+    });
+
+    localStreamRef.current = stream;
+    setCallMode(mode);
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+
+    const pc = new RTCPeerConnection();
+    pcLocalRef.current = pc;
+
+    pc.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        remoteStreamRef.current = remoteStream;
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendSignal({ type: "candidate", candidate: event.candidate });
+      }
+    };
+
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    return pc;
+  };
+
   const startCall = async (mode: "audio" | "video") => {
     if (callStatus !== "idle") return;
+    if (!isRoomConnected) {
+      setCallError("Подключитесь к комнате, чтобы начать звонок.");
+      return;
+    }
+
     setCallStatus("connecting");
-    setCallMode(mode);
     setCallError(null);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: mode === "video"
-      });
-
-      localStreamRef.current = stream;
-
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-
-      const pcLocal = new RTCPeerConnection();
-      const pcRemote = new RTCPeerConnection();
-
-      pcLocalRef.current = pcLocal;
-      pcRemoteRef.current = pcRemote;
-
-      pcRemote.ontrack = (event) => {
-        const [remoteStream] = event.streams;
-        if (remoteStream) {
-          remoteStreamRef.current = remoteStream;
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
-          }
-        }
-      };
-
-      pcLocal.onicecandidate = (event) => {
-        if (event.candidate) {
-          pcRemote.addIceCandidate(event.candidate);
-        }
-      };
-
-      pcRemote.onicecandidate = (event) => {
-        if (event.candidate) {
-          pcLocal.addIceCandidate(event.candidate);
-        }
-      };
-
-      stream.getTracks().forEach((track) => pcLocal.addTrack(track, stream));
-
-      const offer = await pcLocal.createOffer();
-      await pcLocal.setLocalDescription(offer);
-      await pcRemote.setRemoteDescription(offer);
-
-      const answer = await pcRemote.createAnswer();
-      await pcRemote.setLocalDescription(answer);
-      await pcLocal.setRemoteDescription(answer);
-
+      const pc = await ensurePeerConnection(mode);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal({ type: "offer", offer, mode });
       setCallStatus("active");
     } catch (error) {
       console.error("Failed to start call:", error);
@@ -147,6 +155,99 @@ const App: React.FC = () => {
       stopCall();
     };
   }, []);
+
+  const handleSignalMessage = async (message: {
+    type: "offer" | "answer" | "candidate" | "hangup";
+    offer?: RTCSessionDescriptionInit;
+    answer?: RTCSessionDescriptionInit;
+    candidate?: RTCIceCandidateInit;
+    mode?: "audio" | "video";
+  }) => {
+    if (message.type === "offer" && message.offer && message.mode) {
+      try {
+        const pc = await ensurePeerConnection(message.mode);
+        await pc.setRemoteDescription(message.offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal({ type: "answer", answer });
+        setCallStatus("active");
+      } catch (error) {
+        console.error("Failed to answer call:", error);
+        setCallError("Не удалось принять звонок.");
+      }
+    }
+
+    if (message.type === "answer" && message.answer && pcLocalRef.current) {
+      await pcLocalRef.current.setRemoteDescription(message.answer);
+    }
+
+    if (message.type === "candidate" && message.candidate && pcLocalRef.current) {
+      await pcLocalRef.current.addIceCandidate(message.candidate);
+    }
+
+    if (message.type === "hangup") {
+      stopCall();
+    }
+  };
+
+  const connectRoom = () => {
+    if (!roomId.trim()) {
+      setCallError("Введите название комнаты.");
+      return;
+    }
+    setIsRoomConnected(true);
+    setCallError(null);
+  };
+
+  const disconnectRoom = () => {
+    setIsRoomConnected(false);
+    if (pollTimerRef.current) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    lastSignalIdRef.current = 0;
+  };
+
+  useEffect(() => {
+    if (!isRoomConnected) return;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/signaling/poll?room=${encodeURIComponent(
+            roomId
+          )}&since=${lastSignalIdRef.current}`
+        );
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          messages: Array<{ id: number; payload: unknown }>;
+        };
+        data.messages.forEach((message) => {
+          lastSignalIdRef.current = Math.max(lastSignalIdRef.current, message.id);
+          const payload = message.payload as {
+            type: "offer" | "answer" | "candidate" | "hangup";
+            offer?: RTCSessionDescriptionInit;
+            answer?: RTCSessionDescriptionInit;
+            candidate?: RTCIceCandidateInit;
+            mode?: "audio" | "video";
+          };
+          handleSignalMessage(payload);
+        });
+      } catch (error) {
+        console.error("Failed to poll signaling:", error);
+      }
+    };
+
+    poll();
+    pollTimerRef.current = window.setInterval(poll, 1200);
+
+    return () => {
+      if (pollTimerRef.current) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [API_BASE_URL, isRoomConnected, roomId]);
 
   const addMessage = (message: Message) => {
     setMessages((prev) => [message, ...prev]);
@@ -245,7 +346,7 @@ const App: React.FC = () => {
             <div className={styles.cardHeader}>
               <div>
                 <h3>Звонки</h3>
-                <p>Локальный WebRTC loopback без сигналинга</p>
+                <p>WebRTC звонки через сигналинг. Откройте вторую вкладку.</p>
               </div>
               <span className={styles.callStatusBadge}>
                 {callStatus === "idle" && "Готов"}
@@ -256,18 +357,39 @@ const App: React.FC = () => {
 
             {callError ? <div className={styles.callError}>{callError}</div> : null}
 
+            <div className={styles.roomRow}>
+              <label className={styles.roomLabel} htmlFor="roomId">
+                Комната
+              </label>
+              <input
+                id="roomId"
+                className={styles.roomInput}
+                value={roomId}
+                onChange={(event) => setRoomId(event.target.value)}
+              />
+              {isRoomConnected ? (
+                <button className={styles.secondaryButton} onClick={disconnectRoom}>
+                  Отключиться
+                </button>
+              ) : (
+                <button className={styles.secondaryButton} onClick={connectRoom}>
+                  Подключиться
+                </button>
+              )}
+            </div>
+
             <div className={styles.callControls}>
               <button
                 className={styles.primaryButton}
                 onClick={() => startCall("audio")}
-                disabled={callStatus !== "idle"}
+                disabled={callStatus !== "idle" || !isRoomConnected}
               >
                 Аудио звонок
               </button>
               <button
                 className={styles.primaryButton}
                 onClick={() => startCall("video")}
-                disabled={callStatus !== "idle"}
+                disabled={callStatus !== "idle" || !isRoomConnected}
               >
                 Видео звонок
               </button>
@@ -287,7 +409,10 @@ const App: React.FC = () => {
               </button>
               <button
                 className={styles.dangerButton}
-                onClick={stopCall}
+                onClick={() => {
+                  sendSignal({ type: "hangup" });
+                  stopCall();
+                }}
                 disabled={callStatus === "idle"}
               >
                 Завершить звонок

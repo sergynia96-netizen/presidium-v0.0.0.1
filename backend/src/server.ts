@@ -95,6 +95,52 @@ app.post("/api/chat", async (req: Request, res: Response) => {
   });
 });
 
+type SignalMessage = {
+  id: number;
+  payload: unknown;
+  timestamp: number;
+};
+
+const rooms = new Map<string, SignalMessage[]>();
+let signalId = 0;
+
+app.post("/api/signaling/send", (req: Request, res: Response) => {
+  const { room, payload } = req.body as { room?: string; payload?: unknown };
+
+  if (!room) {
+    return res.status(400).json({ error: "Room is required" });
+  }
+
+  const message: SignalMessage = {
+    id: (signalId += 1),
+    payload,
+    timestamp: Date.now()
+  };
+
+  const queue = rooms.get(room) ?? [];
+  queue.push(message);
+  if (queue.length > 200) {
+    queue.splice(0, queue.length - 200);
+  }
+  rooms.set(room, queue);
+
+  return res.json({ ok: true, lastId: message.id });
+});
+
+app.get("/api/signaling/poll", (req: Request, res: Response) => {
+  const room = req.query.room as string | undefined;
+  const since = Number(req.query.since ?? 0);
+
+  if (!room) {
+    return res.status(400).json({ error: "Room is required" });
+  }
+
+  const queue = rooms.get(room) ?? [];
+  const messages = queue.filter((message) => message.id > since);
+
+  return res.json({ messages });
+});
+
 // Listen on port
 app.listen(PORT, () => {
   console.log(`Presidium backend listening on http://localhost:${PORT}`);
