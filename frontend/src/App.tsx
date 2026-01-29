@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./App.module.css";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
-import type { Message, NewMessageInput } from "./types";
+import type { Attachment, Message, NewMessageInput } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 const App: React.FC = () => {
@@ -27,6 +27,11 @@ const App: React.FC = () => {
   const pcLocalRef = useRef<RTCPeerConnection | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const lastSignalIdRef = useRef(0);
+
+  const isAttachmentExpired = (attachment: Attachment) => {
+    if (!attachment.expiresAt) return false;
+    return new Date(attachment.expiresAt).getTime() <= Date.now();
+  };
 
   const messageCountLabel = useMemo(() => {
     if (messages.length === 0) return "Нет сообщений";
@@ -156,6 +161,22 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setMessages((prev) =>
+        prev
+          .map((message) => {
+            if (!message.attachments) return message;
+            const active = message.attachments.filter((att) => !isAttachmentExpired(att));
+            return { ...message, attachments: active };
+          })
+          .filter((message) => message.body || (message.attachments?.length ?? 0) > 0)
+      );
+    }, 2000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
   const handleSignalMessage = async (message: {
     type: "offer" | "answer" | "candidate" | "hangup";
     offer?: RTCSessionDescriptionInit;
@@ -263,37 +284,40 @@ const App: React.FC = () => {
       subject: input.subject,
       body: input.body,
       createdAt: now,
-      status: "sent"
+      status: "sent",
+      attachments: input.attachments
     };
 
     addMessage(userMessage);
 
     try {
       // POST to backend
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message: input.body, systemPrompt })
-      });
+      if (input.body.trim()) {
+        const response = await fetch(`${API_BASE_URL}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ message: input.body, systemPrompt })
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Add server reply to list
-        const serverMessage: Message = {
-          id: crypto.randomUUID(),
-          channel: input.channel,
-          from: "presidium.local",
-          to: input.from,
-          subject: "Local LLM",
-          body: data.reply,
-          createdAt: new Date(data.timestamp).toISOString(),
-          status: "received"
-        };
+        if (response.ok) {
+          const data = await response.json();
 
-        addMessage(serverMessage);
+          // Add server reply to list
+          const serverMessage: Message = {
+            id: crypto.randomUUID(),
+            channel: input.channel,
+            from: "presidium.local",
+            to: input.from,
+            subject: "Local LLM",
+            body: data.reply,
+            createdAt: new Date(data.timestamp).toISOString(),
+            status: "received"
+          };
+
+          addMessage(serverMessage);
+        }
       }
     } catch (error) {
       console.error("Failed to send message:", error);

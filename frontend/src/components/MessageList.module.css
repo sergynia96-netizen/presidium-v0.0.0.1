@@ -69,4 +69,56 @@
   white-space: pre-wrap;
 }
 
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.attachmentImage {
+  width: 100%;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.attachmentVideo,
+.attachmentVideoCircle {
+  width: 100%;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.attachmentVideoCircle {
+  border-radius: 999px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+.attachmentAudio {
+  width: 100%;
+}
+
+.attachmentDoc,
+.attachmentLocation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  color: #e5e7eb;
+  text-decoration: none;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.attachmentTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.attachmentMeta {
+  font-size: 0.65rem;
+  color: #9ca3af;
+}
 
