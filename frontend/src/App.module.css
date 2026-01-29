@@ -116,3 +116,111 @@
 .sendButton:active:not(:disabled) {
   transform: scale(0.98);
 }
+
+/* AI Typing Indicator */
+.typingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  max-width: 70%;
+  align-self: flex-start;
+  background-color: #333;
+  border-radius: 12px;
+  margin-top: 8px;
+}
+
+.typingDot {
+  width: 8px;
+  height: 8px;
+  background-color: #007bff;
+  border-radius: 50%;
+  animation: typingAnimation 1.4s infinite ease-in-out;
+}
+
+.typingDot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.typingText {
+  font-size: 0.85rem;
+  color: #888;
+  margin-left: 4px;
+}
+
+@keyframes typingAnimation {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  30% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+
+/* Device Tier Badge */
+.deviceBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+  border-bottom: 1px solid #333;
+  font-size: 0.85rem;
+}
+
+.badgeEmoji {
+  font-size: 1.2rem;
+}
+
+.badgeText {
+  color: #aaa;
+  font-weight: 500;
+}
+
+/* Quick Replies Container */
+.quickRepliesContainer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  background-color: #1a1a1a;
+  border-top: 1px solid #2a2a2a;
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+.quickReplyChip {
+  padding: 8px 16px;
+  background-color: #2a2a2a;
+  color: #fff;
+  border: 1px solid #3a3a3a;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.quickReplyChip:hover:not(:disabled) {
+  background-color: #3a3a3a;
+  border-color: #007bff;
+  transform: translateY(-2px);
+}
+
+.quickReplyChip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quickReplyChip:active:not(:disabled) {
+  transform: translateY(0);
+}

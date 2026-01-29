@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidium-backend
+  labels:
+    app: presidium-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: presidium-backend
+  template:
+    metadata:
+      labels:
+        app: presidium-backend
+    spec:
+      containers:
+      - name: presidium-backend
+        image: presidium-backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        - containerPort: 3001
+          name: websocket
+          protocol: TCP
+        - containerPort: 4000
+          name: p2p
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: PORT
+          value: "3000"
+        - name: WS_PORT
+          value: "3001"
+        - name: P2P_PORT
+          value: "4000"
+        - name: STORAGE_DB_PATH
+          value: "/app/data/rocksdb"
+        - name: MAX_PEERS
+          value: "12"
+        - name: AI_MODEL_PATH
+          value: "/app/models"
+        - name: AI_DEVICE
+          value: "cpu"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        volumeMounts:
+        - name: presidium-data
+          mountPath: /app/data
+        - name: presidium-models
+          mountPath: /app/models
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: presidium-data
+        persistentVolumeClaim:
+          claimName: presidium-data-pvc
+      - name: presidium-models
+        persistentVolumeClaim:
+          claimName: presidium-models-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: presidium-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: presidium-models-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+

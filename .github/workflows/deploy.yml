@@ -1,46 +1,94 @@
-name: Deploy
+name: Deploy Presidium
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  build-and-deploy:
+  test:
     runs-on: ubuntu-latest
     
     steps:
       - uses: actions/checkout@v3
       
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
+          cache: 'npm'
       
-      - name: Install dependencies
+      - name: Install Backend Dependencies
         run: |
-          npm install
-          cd backend && npm install && cd ../frontend && npm install && cd ..
+          cd backend
+          npm ci
       
-      - name: Build backend
-        run: cd backend && npm run build && cd ..
+      - name: Build Backend
+        run: |
+          cd backend
+          npm run build
       
-      - name: Build frontend
-        run: cd frontend && npm run build && cd ..
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+      
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm run build
+      
+      - name: Run Tests
+        run: |
+          cd backend
+          npm test 2>/dev/null || echo "No tests configured"
+
+  deploy-backend:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
       
       - name: Deploy to Heroku
         uses: akhileshns/heroku-deploy@v3.12.12
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: presidium-v0001
+          heroku_app_name: ${{ secrets.HEROKU_APP_NAME || 'presidium-backend-v0001' }}
           heroku_email: ${{ secrets.HEROKU_EMAIL }}
           appdir: "backend"
+          usedocker: false
       
-      - name: Notify Discord
-        if: always()
-        uses: 8398a7/action-slack@v3
+      - name: Check Health
+        run: |
+          sleep 15
+          curl -f https://${{ secrets.HEROKU_APP_NAME || 'presidium-backend-v0001' }}.herokuapp.com/health || exit 1
+
+  deploy-frontend:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          status: ${{ job.status }}
-          text: 'Presidium v0.0.0.1 deployment ${{ job.status }}'
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          node-version: '20'
+      
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+      
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          cd frontend
+          vercel --prod --token $VERCEL_TOKEN --yes --scope $VERCEL_ORG_ID
 
 

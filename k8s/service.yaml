@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidium-backend-service
+  labels:
+    app: presidium-backend
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  - port: 3001
+    targetPort: 3001
+    protocol: TCP
+    name: websocket
+  - port: 4000
+    targetPort: 4000
+    protocol: TCP
+    name: p2p
+  selector:
+    app: presidium-backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidium-backend-headless
+  labels:
+    app: presidium-backend
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 4000
+    targetPort: 4000
+    protocol: TCP
+    name: p2p
+  selector:
+    app: presidium-backend
+
