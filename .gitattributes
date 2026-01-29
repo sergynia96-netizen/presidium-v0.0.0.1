@@ -1,3 +1,9 @@
+<<<<<<< HEAD
 frontend/public/models/**/*.bin filter=lfs diff=lfs merge=lfs -text
 frontend/public/models/**/*.wasm filter=lfs diff=lfs merge=lfs -text
 frontend/public/models/**/*.tmp filter=lfs diff=lfs merge=lfs -text
+=======
+frontend/public/models/**/*.bin filter=lfs diff=lfs merge=lfs -text
+frontend/public/models/**/*.wasm filter=lfs diff=lfs merge=lfs -text
+frontend/public/models/**/*.tmp filter=lfs diff=lfs merge=lfs -text
+>>>>>>> e9252c9a1f1ab9b7c70dc2fdd65e8fa3e9103969
