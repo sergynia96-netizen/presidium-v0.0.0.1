@@ -6,6 +6,7 @@ import type { Attachment, Message, NewMessageInput } from "./types";
 import { deleteMedia } from "./services/localMediaStore";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+const MESSAGE_STORAGE_KEY = "presidium-chat-messages";
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [systemPrompt, setSystemPrompt] = useState(
@@ -157,10 +158,29 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    const stored = localStorage.getItem(MESSAGE_STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Message[];
+        setMessages(parsed);
+      } catch (error) {
+        console.error("Failed to parse stored messages:", error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     return () => {
       stopCall();
     };
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(MESSAGE_STORAGE_KEY, JSON.stringify(messages));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [messages]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {

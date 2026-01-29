@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { Attachment, Message } from "../types";
 import styles from "./MessageList.module.css";
 import { loadMedia } from "../services/localMediaStore";
@@ -21,6 +21,33 @@ const isAttachmentExpired = (attachment: Attachment) => {
 
 export const MessageList: React.FC<MessageListProps> = ({ messages }) => {
   const [loadedUrls, setLoadedUrls] = useState<Record<string, string>>({});
+
+  const attachmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    messages.forEach((message) => {
+      message.attachments?.forEach((attachment) => ids.add(attachment.id));
+    });
+    return ids;
+  }, [messages]);
+
+  useEffect(() => {
+    setLoadedUrls((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((id) => {
+        if (!attachmentIds.has(id)) {
+          URL.revokeObjectURL(next[id]);
+          delete next[id];
+        }
+      });
+      return next;
+    });
+  }, [attachmentIds]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(loadedUrls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [loadedUrls]);
 
   const handleLoad = async (attachment: Attachment) => {
     if (!attachment.storageKey) return;
